@@ -2,249 +2,171 @@
 
 pragma solidity ^0.8.0;
 
-contract Ecommerce{
-    
-   
-    address[]  buyer;
-    address payable public  Amazon;
+contract Ecommerce {
+    // Variables
+    address[] public buyer;
+    address payable public Amazon;
 
-    constructor(){
-        Amazon=payable(msg.sender);
+    // Constructor
+    constructor() {
+        Amazon = payable(msg.sender);
     }
 
-    modifier owner{
-         require(msg.sender==Amazon,"You are not the owner");
-         _;
+    // Modifier: Restricts functions to the contract owner (Amazon)
+    modifier owner {
+        require(msg.sender == Amazon, "You are not the owner");
+        _;
     }
 
-     struct Products{
+    // Struct to represent product details
+    struct Products {
         string product;
         address payable seller;
-        uint price ;   
+        uint price;
         uint unitsofproduct;
         uint productid;
     }
     Products[] public products;
     uint public numproducts;
 
-
-
-     struct Buyerdetails{
+    // Struct to represent buyer's purchase details
+    struct Buyerdetails {
         address payable buyer;
         uint product;
-        uint numberofunitspurchasedofproduct; 
+        uint numberofunitspurchasedofproduct;
         uint orderid;
         uint priceofproduct;
         address payable selleradd;
-        uint time;  
-        bool delivery;  
+        uint time;
+        bool delivery;
     }
+    Buyerdetails[] public buyerdetails;
 
-    Buyerdetails[]  buyerdetails;
+    // Mapping to track whether a buyer has paid for a product
+    mapping(address => bool) public paid;
 
-    mapping(address=>bool)  paid;
+    // Mapping to store the order ID of a buyer based on their address
+    mapping(address => uint) public addressorderlist;
 
-    mapping(address=>uint) addressorderlist;
+    // Events
+    event registered(string title, uint productid, address selleradd);
+    event boughtproduct(Buyerdetails);
 
-    event  registered(string title,uint productid,address selleradd);
-    event  boughtproduct(Buyerdetails);
-   
+    // Function to register a new product
+    function Register(string memory _product, uint _price, uint _unitsofproduct) public {
+        require(msg.sender != Amazon, "Owner can't write product description");
+        require(_price > 0, "Product price should be greater than 0");
 
-    function Register(string memory _product,uint _price,uint _unitsofproduct)public {
-        require(msg.sender!=Amazon,"owner can't write product description");
-        require(_price>0,"Product price should be greater than 0");
         Products memory tempproducts;
-        tempproducts.seller=payable(msg.sender);
-        for(uint i=0;i<products.length;i++){
-             
-            if(tempproducts.seller==products[i].seller){
-                
-                 products[i].unitsofproduct+=_unitsofproduct;   
-                 
+        tempproducts.seller = payable(msg.sender);
+
+        // Check if the seller already has products listed and update the quantity
+        for (uint i = 0; i < products.length; i++) {
+            if (tempproducts.seller == products[i].seller) {
+                products[i].unitsofproduct += _unitsofproduct;
             }
         }
-        tempproducts.product=_product;
-        tempproducts.price=_price*10**18;
-        tempproducts.unitsofproduct=_unitsofproduct;
+
+        tempproducts.product = _product;
+        tempproducts.price = _price * 10**18;
+        tempproducts.unitsofproduct = _unitsofproduct;
         numproducts++;
-        
+
         products.push(tempproducts);
-        for(uint i=0;i<products.length;i++){
-             products[i].productid=i;
-              emit registered(_product,products[i].productid,msg.sender);     
-        }   
-    }
-
-
-     function Restock(uint _productid ,uint units)public{
-         require(units>0,"units should be greater then zero");
-       
-        Products memory tempstock;
-            tempstock.seller=payable(msg.sender);
-            tempstock.productid=_productid;
-            tempstock.unitsofproduct=units;
-             uint x;
-                x=products[_productid].unitsofproduct;
-                
-            for(uint i=0;i<products.length;i++){
-               
-               if(tempstock.seller==products[i].seller && tempstock.productid==products[i].productid){
-                    products[i].unitsofproduct+=units;
-               }
-                if(x==0 && tempstock.seller==products[i].seller && tempstock.productid==products[i].productid){
-                    numproducts++;
-                }
-            }
-           
-            
-    }
-
-        function Deposit(uint _productid,uint units)public payable {
-            require(units>0,"Minimum 1 unit required to purchase");
-            require(numproducts!=0,"we are out of products");
-            require(units<=products[_productid].unitsofproduct,"Sorry we don't have that many units");
-            require(msg.sender!=products[_productid].seller,"Seller can't buy own product");    
-            require(msg.value==products[_productid].price*units,"Please pay the exact price");
-            require(products[_productid].unitsofproduct>0,"Sorry we are out of stock for this product");
-            products[_productid].unitsofproduct-=units;
-
-            for(uint i=0;i<products.length;i++){
-                if(products[i].unitsofproduct==0){
-                numproducts--;
-                }
-            }
-           Buyerdetails memory tempdetails;
-           tempdetails.buyer=payable(msg.sender);
-           tempdetails.product=_productid;
-           tempdetails.numberofunitspurchasedofproduct=units;
-           tempdetails.orderid=uint(sha256(abi.encodePacked(block.timestamp,block.difficulty)));
-           tempdetails.priceofproduct=products[_productid].price;
-           tempdetails.selleradd=products[_productid].seller;
-           tempdetails.time=block.timestamp;
-           buyerdetails.push(tempdetails);
-           paid[msg.sender]=true;
-
-           addressorderlist[msg.sender]=uint(tempdetails.orderid);
-
-            emit boughtproduct(tempdetails);
-    
+        
+        // Assign a product ID and emit the 'registered' event
+        for (uint i = 0; i < products.length; i++) {
+            products[i].productid = i;
+            emit registered(_product, products[i].productid, msg.sender);
         }
-    
-    function Buyersdetails()public view owner returns(Buyerdetails[] memory){
+    }
+
+    // Function to restock a product by the seller
+    function Restock(uint _productid, uint units) public {
+        require(units > 0, "Units should be greater than zero");
+
+        Products memory tempstock;
+        tempstock.seller = payable(msg.sender);
+        tempstock.productid = _productid;
+        tempstock.unitsofproduct = units;
+
+        uint x;
+        x = products[_productid].unitsofproduct;
+
+        for (uint i = 0; i < products.length; i++) {
+            // If the seller and product ID match, update the quantity
+            if (tempstock.seller == products[i].seller && tempstock.productid == products[i].productid) {
+                products[i].unitsofproduct += units;
+            }
+
+            // If new product added, increase the product count
+            if (x == 0 && tempstock.seller == products[i].seller && tempstock.productid == products[i].productid) {
+                numproducts++;
+            }
+        }
+    }
+
+    // Function for a buyer to deposit payment and purchase a product
+    function Deposit(uint _productid, uint units) public payable {
+        require(units > 0, "Minimum 1 unit required to purchase");
+        require(numproducts != 0, "We are out of products");
+        require(units <= products[_productid].unitsofproduct, "Sorry, we don't have that many units");
+        require(msg.sender != products[_productid].seller, "Seller can't buy own product");
+        require(msg.value == products[_productid].price * units, "Please pay the exact price");
+        require(products[_productid].unitsofproduct > 0, "Sorry, we are out of stock for this product");
+
+        products[_productid].unitsofproduct -= units;
+
+        // Decrease the product count if the product is out of stock
+        for (uint i = 0; i < products.length; i++) {
+            if (products[i].unitsofproduct == 0) {
+                numproducts--;
+            }
+        }
+
+        // Record buyer's purchase details
+        Buyerdetails memory tempdetails;
+        tempdetails.buyer = payable(msg.sender);
+        tempdetails.product = _productid;
+        tempdetails.numberofunitspurchasedofproduct = units;
+        tempdetails.orderid = uint(sha256(abi.encodePacked(block.timestamp, block.difficulty)));
+        tempdetails.priceofproduct = products[_productid].price;
+        tempdetails.selleradd = products[_productid].seller;
+        tempdetails.time = block.timestamp;
+        buyerdetails.push(tempdetails);
+        paid[msg.sender] = true;
+
+        // Assign order ID to the buyer's address
+        addressorderlist[msg.sender] = uint(tempdetails.orderid);
+
+        // Emit the 'boughtproduct' event with the order details
+        emit boughtproduct(tempdetails);
+    }
+
+    // Function to get the purchase details of a buyer
+    function Buyersdetails() public view owner returns (Buyerdetails[] memory) {
         return buyerdetails;
     }
 
-    function Orderdetail()public view returns(uint){
-       return addressorderlist[msg.sender];
-             
+    // Function to get the order ID based on the buyer's address
+    function Orderdetail() public view returns (uint) {
+        return addressorderlist[msg.sender];
     }
-    
-    function Delivery(uint orderid)public payable {
-        require(paid[msg.sender]!= false,"You must first buy product");
 
+    // Function for product delivery by the contract owner (Amazon)
+    function Delivery(uint orderid) public payable {
+        require(paid[msg.sender] != false, "You must first buy the product");
 
         Buyerdetails memory tempdetails;
-        tempdetails.orderid=orderid;
+        tempdetails.orderid = orderid;
 
-        for(uint i=0;i<buyerdetails.length;i++){
-
-           
-            if(tempdetails.orderid==buyerdetails[i].orderid){
-                buyerdetails[i].selleradd.transfer(((buyerdetails[i].priceofproduct*buyerdetails[i].numberofunitspurchasedofproduct)*(99))/100);
-                Amazon.transfer(((buyerdetails[i].priceofproduct*buyerdetails[i].numberofunitspurchasedofproduct)*(1))/100);   
-                 buyerdetails[i].delivery=true;
+        for (uint i = 0; i < buyerdetails.length; i++) {
+            // If the order ID matches, process product delivery
+            if (tempdetails.orderid == buyerdetails[i].orderid) {
+                buyerdetails[i].selleradd.transfer((buyerdetails[i].priceofproduct * buyerdetails[i].numberofunitspurchasedofproduct * 99) / 100);
+                Amazon.transfer((buyerdetails[i].priceofproduct * buyerdetails[i].numberofunitspurchasedofproduct) / 100);
+                buyerdetails[i].delivery = true;
             }
         }
-     }
+    }
 }
-
-// 1000000000000000000
-
-
-
-
-// buydetails[i].buyer==msg.sender && buydetails[i].product==productid && buydetails[i].numberofunitspurchasedofproduct==unitspurchased
-
-
-
-
-
-
-
- //     Buydetails memory tempodetails;
-    //     tempodetails.buyer=payable(msg.sender);
-    //     tempodetails.product=productid;
-    //     tempodetails.numberofunitspurchasedofproduct=unitspurchased;
-    //    for(uint i=0;i<buydetails.length;i++){
-    //        if(tempodetails==buydetails[i]){
-    //             products[productid].seller.transfer(products[productid].price*unitspurchased);
-    //        }
-    //    }
-
-
-  
-   // function restock(uint _productid ,uint units)public{
-    //     Products memory tempstock;
-    //         tempstock.productid=_productid;
-    //         tempstock.unitsofproduct=units;
-    //         require
-    // }
-
-
-   
-    // require(products[i].seller==tempstock.seller,"You are not the seller of this product");
-
-
-
-
-     // function orderdetail()public view returns(uint){
-
-        // Buyerdetails memory tempordetails;
-        // tempordetails.buyer=payable(msg.sender);
-        // for(uint i=0;i<buyerdetails.length;i++){
-
-           
-        //     if(tempordetails.buyer==buyerdetails[i].buyer){
-        //         return buyerdetails[i].orderid;
-        //     }
-        // }
-       
-         
-    // }
-
-
-
-//     struct Timeorder{
-//         uint ordercode;
-//         uint time;
-//         address buyeraddress;
-//     }
-
-//     // mapping(address=>timeorder) orderdetails;
-
-//    Timeorder[] timeorder;
-
-
-      //    Timeorder memory tempodetails;
-        //    tempodetails.ordercode=tempdetails.orderid;
-        //    tempodetails.time=block.timestamp;
-        //    tempodetails.buyeraddress=msg.sender;
-           
-        //    timeorder.push(tempodetails);
-
-
-
-
-
-
-         // Buyerdetails memory tempdetails;
-        // tempdetails.buyer=payable(msg.sender);
-        // for(uint i=0;i<buyerdetails.length;i++){
-        //     if(tempdetails.buyer==buyerdetails[i].buyer){
-        //         return buyerdetails[i].orderid;
-                
-        //     }
-        // }      
-
-
-        // address buyeradd,uint productbooughtid,uint unitsbought,uint orderid
